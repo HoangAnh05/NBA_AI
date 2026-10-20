@@ -315,7 +315,7 @@ def train_xgboost(X_train, y_train, X_val, y_val, meta, n_trials=50):
         y_pred = np.column_stack([home_pred, away_pred])
 
         metrics = evaluate(y_val, y_pred)
-        score = metrics["avg_score_mae"]
+        score = metrics["avg_score_mae"] - 2 * metrics["win_accuracy"] 
 
         if score < best_score:
             best_score = score
