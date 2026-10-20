@@ -20,8 +20,15 @@ Usage:
 """
 
 from abc import ABC, abstractmethod
+import logging
+import math
+from numbers import Real
 
-from src.predictions.features import load_feature_sets
+import numpy as np
+
+from src.predictions.features import FEATURE_NAMES, load_feature_sets
+
+SCORE_FEATURES = ("Home_PPG", "Home_OPP_PPG", "Away_PPG", "Away_OPP_PPG")
 
 
 class BasePredictor(ABC):
@@ -32,6 +39,8 @@ class BasePredictor(ABC):
     Subclasses must implement make_pre_game_predictions().
     """
 
+    required_features = SCORE_FEATURES
+
     def __init__(self, model_paths=None):
         """
         Initialize predictor.
@@ -41,6 +50,9 @@ class BasePredictor(ABC):
                                          Ignored for formula-based predictors.
         """
         self.model_paths = model_paths or []
+        # Games deliberately not predicted ({game_id: reason}), e.g. too
+        # little history; any other missing game is a failure
+        self.skipped = {}
 
     @abstractmethod
     def make_pre_game_predictions(self, game_ids):
@@ -70,7 +82,39 @@ class BasePredictor(ABC):
             dict: Dictionary mapping game_id to feature dictionary.
         """
         feature_sets = load_feature_sets(game_ids)
-        return feature_sets
+        valid = {}
+        for game_id in game_ids:
+            row = feature_sets.get(game_id)
+            if not isinstance(row, dict) or not all(
+                name in row for name in self.required_features
+            ):
+                logging.warning(f"Skipping game {game_id}: missing prediction features")
+                continue
+            cleaned = {}
+            for name in self.required_features:
+                value = row[name]
+                # Unavailable contextual stats are imputed later (training mean,
+                # see _standardize), but scores must have actual data and
+                # infinities are invalid.
+                if value is None or (isinstance(value, Real) and math.isnan(value)):
+                    if name in SCORE_FEATURES:
+                        break
+                    cleaned[name] = None
+                elif (
+                    isinstance(value, Real)
+                    and not isinstance(value, bool)
+                    and math.isfinite(value)
+                ):
+                    cleaned[name] = value
+                else:
+                    break
+            else:
+                if self.required_features is SCORE_FEATURES and "pred_players" in row:
+                    cleaned["pred_players"] = row["pred_players"]
+                valid[game_id] = cleaned
+                continue
+            logging.warning(f"Skipping game {game_id}: invalid prediction features")
+        return valid
 
 
 class BaseMLPredictor(BasePredictor):
@@ -83,6 +127,8 @@ class BaseMLPredictor(BasePredictor):
     - make_pre_game_predictions(game_ids): Generate predictions using loaded models
     """
 
+    required_features = FEATURE_NAMES
+
     def __init__(self, model_paths=None):
         """
         Initialize ML predictor and load models.
@@ -93,6 +139,19 @@ class BaseMLPredictor(BasePredictor):
         super().__init__(model_paths)
         self.models = []
         self.load_models()
+
+    @staticmethod
+    def _standardize(features: list[dict], mean, std) -> np.ndarray:
+        """Feature matrix with missing values set to the training mean (as in
+        training), then standardized. Without a scaler, missing values are 0."""
+        values = np.array(
+            [[np.nan if v is None else v for v in row.values()] for row in features],
+            dtype=np.float64,
+        )
+        if mean is None:
+            return np.nan_to_num(values)
+        mean, std = np.asarray(mean, dtype=np.float64), np.asarray(std, dtype=np.float64)
+        return (np.where(np.isnan(values), mean, values) - mean) / std
 
     @abstractmethod
     def load_models(self):

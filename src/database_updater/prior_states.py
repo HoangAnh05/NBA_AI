@@ -27,6 +27,7 @@ import sqlite3
 from src.config import config
 from src.database import get_db
 from src.logging_config import setup_logging
+from src.phase5.arena_data import franchise_abbrs
 from src.utils import log_execution_time, lookup_basic_game_info
 
 # Configuration values
@@ -163,7 +164,9 @@ def load_prior_states(game_ids_dict, db_path=DB_PATH, parse_players_data=False):
     dict: A dictionary where each key is a game ID and each value is another dictionary containing
           'home_prior_states', 'away_prior_states', and 'missing_prior_states'.
           'home_prior_states' and 'away_prior_states' are lists of final state information for each home and away game,
-          ordered by game date. 'missing_prior_states' is a dictionary containing 'home' and 'away' lists of missing game IDs.
+          ordered by game date. A team with no current-season final states uses
+          the preceding season and is marked with '<side>_prior_season'.
+          'missing_prior_states' retains every missing current-season game ID.
     """
     logging.debug(f"Loading prior states for {len(game_ids_dict)} games...")
     prior_states_dict = {
@@ -174,6 +177,7 @@ def load_prior_states(game_ids_dict, db_path=DB_PATH, parse_players_data=False):
         }
         for game_id in game_ids_dict.keys()
     }
+    games_info = lookup_basic_game_info(list(game_ids_dict), db_path)
 
     all_game_ids = list(
         set(
@@ -219,15 +223,54 @@ def load_prior_states(game_ids_dict, db_path=DB_PATH, parse_players_data=False):
                         states_dict[id] for id in away_game_ids if id in states_dict
                     ]
 
-                    if not prior_states_dict[game_id]["home_prior_states"]:
-                        prior_states_dict[game_id]["missing_prior_states"][
-                            "home"
-                        ] = home_game_ids
+                    for side, ids in (("home", home_game_ids), ("away", away_game_ids)):
+                        prior_states_dict[game_id]["missing_prior_states"][side] = [
+                            gid for gid in ids if gid not in states_dict
+                        ]
 
-                    if not prior_states_dict[game_id]["away_prior_states"]:
-                        prior_states_dict[game_id]["missing_prior_states"][
-                            "away"
-                        ] = away_game_ids
+            # Seed a team's first games from the preceding season, only until
+            # current-season final states exist. Keep missing current states
+            # visible so the updater retries instead of finalizing stale data.
+            for game_id, states in prior_states_dict.items():
+                info = games_info.get(game_id)
+                if not info:
+                    continue
+                start_year = int(info["season"].split("-")[0])
+                previous_season = f"{start_year - 1}-{start_year}"
+                for side in ("home", "away"):
+                    if states[f"{side}_prior_states"]:
+                        continue
+                    # A relocated team played that season under its old
+                    # abbreviation (SEA for OKC's first 2008-09 game); match the
+                    # franchise and relabel, since features find the team by name.
+                    # The Charlotte Hornets (CHH) moved to New Orleans in 2002, but
+                    # the NBA gave that history back to Charlotte's franchise.
+                    abbrs = franchise_abbrs(info[side]) + (
+                        ["CHH"] if info[side] == "NOH" else []
+                    )
+                    q = ", ".join("?" * len(abbrs))
+                    cursor.execute(
+                        f"""
+                        SELECT gs.* FROM GameStates gs
+                        JOIN Games g ON g.game_id = gs.game_id
+                        WHERE g.season = ?
+                        AND g.season_type IN ('Regular Season', 'Post Season')
+                        AND g.status = 3 AND gs.is_final_state = 1
+                        AND (g.home_team IN ({q}) OR g.away_team IN ({q}))
+                        AND g.date_time_utc < ?
+                        ORDER BY g.date_time_utc
+                        """,
+                        (previous_season, *abbrs, *abbrs, info["date_time_utc"]),
+                    )
+                    fallback = [dict(row) for row in cursor.fetchall()]
+                    for state in fallback:
+                        team_side = "home" if state["home"] in abbrs else "away"
+                        state[team_side] = info[side]
+                    if parse_players_data:
+                        for state in fallback:
+                            state["players_data"] = json.loads(state["players_data"])
+                    states[f"{side}_prior_states"] = fallback
+                    states[f"{side}_prior_season"] = bool(fallback)
 
         logging.debug(f"Prior states loaded for {len(prior_states_dict)} games.")
         missing_count = sum(
