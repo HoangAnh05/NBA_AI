@@ -280,17 +280,23 @@ def train_xgboost(X_train, y_train, X_val, y_val, meta, n_trials=50):
     def objective(trial):
         nonlocal best_score, best_params, best_model
 
+       
         params = {
-            "max_depth": trial.suggest_int("max_depth", 3, 7),
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.15, log=True),
-            "n_estimators": trial.suggest_int("n_estimators", 100, 500, step=50),
-            "subsample": trial.suggest_float("subsample", 0.6, 0.9),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 0.9),
-            "reg_lambda": trial.suggest_float("reg_lambda", 0.1, 10.0, log=True),
-            "gamma": trial.suggest_float("gamma", 0.0, 1.0),
+            "max_depth": trial.suggest_int("max_depth", 2, 8),
+            "learning_rate": trial.suggest_float(
+                "learning_rate", 0.01, 0.15, log=True
+            ),
+            "n_estimators": trial.suggest_int("n_estimators", 200, 1000, step=100),
+            "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+
+            "reg_alpha": trial.suggest_float("reg_alpha", 1e-4, 10.0, log=True),
+            "reg_lambda": trial.suggest_float("reg_lambda", 0.1, 20.0, log=True),
+            "gamma": trial.suggest_float("gamma", 0.0, 5.0),
+
             "objective": "reg:squarederror",
             "random_state": 42,
-            "early_stopping_rounds": 20,
+            "early_stopping_rounds": 30,
         }
 
         # Train separate models for home and away
