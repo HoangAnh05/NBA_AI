@@ -151,7 +151,7 @@ def load_data(cutoff_date: str | None = None, val_season: str | None = None):
         raise ValueError("No games available for training.")
 
     if val_season is None:
-        val_season = df["season"].max()
+        val_season = "2025-2026"
     if val_season not in set(df["season"]):
         raise ValueError(f"Validation season {val_season!r} is not present in the data.")
 

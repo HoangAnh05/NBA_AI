@@ -108,6 +108,45 @@ python scripts/train_legacy_models.py --models xgboost --xgb-trials 100
 `--xgb-trials` affects only XGBoost. Ridge and MLP are not controlled by this
 option.
 
+## Backtest the trained models
+
+After training, evaluate the predictors on completed historical games:
+
+```bash
+python scripts/backtest.py \
+  --predictors Tree \
+  --season 2025-2026
+```
+```bash
+python scripts/backtest.py \
+  --predictors Tree \
+  --season 2025-2026 \
+  --output models/backtests/2025-2026.json \
+  --note "Tree model trained with the 85/15 chronological split; validation covers the final 15% of the 2025-2026 season."
+```
+
+To save the results so they appear in the dashboard:
+
+```bash
+python scripts/backtest.py \
+  --predictors Tree \
+  --season 2025-2026 \
+  --output models/backtests/2025-2026.json
+```
+
+To compare multiple predictors:
+
+```bash
+python scripts/backtest.py \
+  --predictors Tree Linear MLP Baseline \
+  --season 2025-2026 \
+  --output models/backtests/2025-2026.json
+```
+
+The backtest uses completed games, the predictors' historical pre-game code,
+and Vegas closing lines. Use a different output filename when comparing
+another season or date range.
+
 ## Output files
 
 Training overwrites the model files used by the application:
