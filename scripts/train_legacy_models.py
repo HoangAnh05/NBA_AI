@@ -5,8 +5,9 @@ Training script for legacy NBA prediction models (Ridge, XGBoost, MLP).
 Trains on Features table (43 features) to predict home_score + away_score.
 
 Improvements over v0.4 (src/model_training/train.py):
-- Uses all available seasons for training (2000-2001 through 2024-2025)
-- Cutoff date support for temporal splits
+- Uses all available seasons for training
+- Splits the current season chronologically into 85% training and 15% validation
+- Optional cutoff date support for temporal splits
 - Optuna hyperparameter tuning for XGBoost (50 trials)
 - Larger MLP with BatchNorm + Huber loss + CosineAnnealingLR
 - Missing values imputed with training mean (not dropped)
@@ -105,12 +106,17 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def load_data(cutoff_date: str, val_season: str = "2025-2026"):
+def load_data(cutoff_date: str | None = None, val_season: str | None = None):
     """
     Load features + final scores from the database.
 
-    Training: all seasons except val_season, games before cutoff_date.
-    Validation: val_season games before cutoff_date.
+    Training: all seasons before the validation season, plus the first 85% of
+    the validation season in chronological order.
+    Validation: the final 15% of the validation season in chronological order.
+
+    By default, the latest season present in the loaded data is used as the
+    validation season. ``val_season`` can override that selection. If supplied,
+    ``cutoff_date`` limits the loaded games before the split.
 
     Returns (X_train, y_train, X_val, y_val, meta) where meta has counts.
     """
@@ -132,11 +138,22 @@ def load_data(cutoff_date: str, val_season: str = "2025-2026"):
               AND f.feature_set IS NOT NULL
               AND f.feature_set != '{}'
               AND f.feature_set != ''
-              AND g.date_time_utc < ?
         """
-        df = pd.read_sql_query(query, conn, params=[cutoff_date])
+        params = []
+        if cutoff_date is not None:
+            query += " AND g.date_time_utc < ?"
+            params.append(cutoff_date)
+        query += " ORDER BY g.date_time_utc, g.game_id"
+        df = pd.read_sql_query(query, conn, params=params)
 
     log.info(f"  Loaded {len(df)} games in {time.time() - t0:.1f}s")
+    if df.empty:
+        raise ValueError("No games available for training.")
+
+    if val_season is None:
+        val_season = df["season"].max()
+    if val_season not in set(df["season"]):
+        raise ValueError(f"Validation season {val_season!r} is not present in the data.")
 
     # Parse JSON feature_set into columns
     log.info("  Parsing feature JSON...")
@@ -152,8 +169,18 @@ def load_data(cutoff_date: str, val_season: str = "2025-2026"):
     # Targets
     y = df[["home_score", "away_score"]].values.astype(np.float64)
 
-    # Split: training = all seasons except val_season, validation = val_season
-    is_val = df["season"] == val_season
+    # Split chronologically: older seasons are all training data, while the
+    # current/selected season is split into an 85% train and 15% validation
+    # window to avoid using future games for training.
+    season_mask = df["season"] == val_season
+    season_indices = np.flatnonzero(season_mask.to_numpy())
+    if len(season_indices) < 2:
+        raise ValueError(
+            f"Validation season {val_season!r} needs at least two games to split."
+        )
+    split_idx = max(1, min(len(season_indices) - 1, int(len(season_indices) * 0.85)))
+    is_val = np.zeros(len(df), dtype=bool)
+    is_val[season_indices[split_idx:]] = True
     X_all = features_df.values.astype(np.float64)
 
     X_train_raw, y_train = X_all[~is_val], y[~is_val]
@@ -182,6 +209,13 @@ def load_data(cutoff_date: str, val_season: str = "2025-2026"):
         "n_val": len(X_val),
         "train_seasons": train_seasons,
         "val_seasons": val_seasons,
+        "season_split": {
+            "season": val_season,
+            "train_pct": round(split_idx / len(season_indices) * 100, 1),
+            "val_pct": round(
+                (len(season_indices) - split_idx) / len(season_indices) * 100, 1
+            ),
+        },
         "scaler_mean": train_mean,
         "scaler_std": train_std,
         "cutoff_date": cutoff_date,
@@ -544,6 +578,7 @@ def save_model(model, model_name, metrics, hyperparams, meta):
         ),
         "train_seasons": meta["train_seasons"],
         "val_season": meta["val_seasons"],
+        "season_split": meta["season_split"],
         "cutoff_date": meta["cutoff_date"],
         "metrics": metrics,
         "hyperparameters": {
@@ -604,13 +639,13 @@ def parse_args():
     )
     parser.add_argument(
         "--cutoff-date",
-        default="2026-03-31",
-        help="No games on or after this date in training/val (default: 2026-03-31)",
+        default=None,
+        help="Optional cutoff; no games on or after this date are loaded",
     )
     parser.add_argument(
         "--val-season",
-        default="2025-2026",
-        help="Season to hold out for validation (default: 2025-2026)",
+        default=None,
+        help="Season to split 85%%/15%% (default: latest season in the data)",
     )
     parser.add_argument(
         "--xgb-trials",
@@ -633,8 +668,8 @@ def main():
     print("  NBA LEGACY MODEL TRAINING (v0.5)")
     print("=" * 60)
     print(f"  Models:      {args.models}")
-    print(f"  Cutoff date: {args.cutoff_date}")
-    print(f"  Val season:  {args.val_season}")
+    print(f"  Cutoff date: {args.cutoff_date or 'none'}")
+    print(f"  Val season:  {args.val_season or 'latest season'}")
     if "xgboost" in args.models:
         print(f"  XGB trials:  {args.xgb_trials}")
     print()

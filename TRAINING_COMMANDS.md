@@ -44,8 +44,10 @@ python scripts/train_legacy_models.py
 
 This trains Ridge, XGBoost, and MLP using the script defaults:
 
-- Validation season: `2025-2026`
-- Cutoff date: `2026-03-31`
+- Validation season: the latest season present in the database
+- Current-season split: the first 85% of games for training and the final 15%
+  for validation, in chronological order
+- Cutoff date: none (use `--cutoff-date` to restrict the loaded games)
 - XGBoost Optuna trials: `50`
 
 ### Train only Ridge
@@ -76,8 +78,8 @@ python scripts/train_legacy_models.py --models xgboost mlp
 
 ## Change the validation split
 
-Use `--val-season` to hold out a different season and `--cutoff-date` to
-exclude games on or after a specific date:
+Use `--val-season` to select a different season for the 85%/15% split and
+`--cutoff-date` to exclude games on or after a specific date:
 
 ```bash
 python scripts/train_legacy_models.py \
@@ -86,8 +88,9 @@ python scripts/train_legacy_models.py \
   --cutoff-date 2025-04-01
 ```
 
-The training data contains all other available seasons, while the selected
-validation season is kept separate.
+All seasons other than the selected validation season are used for training.
+The selected season's earliest 85% of games are added to training, and its
+latest 15% are reserved for validation.
 
 ## Change XGBoost tuning time
 
@@ -127,8 +130,6 @@ python scripts/train_legacy_models.py --dry-run
 # 2. Train the models
 python scripts/train_legacy_models.py \
   --models ridge xgboost mlp \
-  --val-season 2025-2026 \
-  --cutoff-date 2026-03-31 \
   --xgb-trials 50
 
 # 3. Optionally regenerate the predictor performance chart
