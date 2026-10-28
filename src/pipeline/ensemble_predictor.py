@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 SPREAD_MODELS = {"Phase5", "Phase3"}
 
 # Models that produce individual scores (pred_home_score, pred_away_score)
-SCORE_MODELS = {"Linear", "Tree", "MLP"}
+SCORE_MODELS = {"Tree", "MLP"}
 
 # Minimum number of component predictions required to produce an ensemble
 MIN_COMPONENTS = 2
@@ -36,7 +36,7 @@ MIN_COMPONENTS = 2
 class EnsemblePredictor(BasePredictor):
     """Ensemble predictor that combines predictions from individual models."""
 
-    COMPONENT_MODELS = ["Phase5", "Phase3", "Linear", "Tree", "MLP"]
+    COMPONENT_MODELS = ["Phase5", "Phase3", "Tree", "MLP"]
 
     def __init__(self, model_paths=None, historical: bool = False):
         super().__init__(model_paths)
@@ -51,7 +51,7 @@ class EnsemblePredictor(BasePredictor):
           - Spread: average of all available spreads (direct or derived from scores)
           - Win prob: log-odds (logit) averaging
           - Scores: the average total of every model that predicts scores
-            (Linear, Tree, MLP, Phase3), split by the ensemble spread
+            (Tree, MLP, Phase3), split by the ensemble spread
 
         Args:
             game_ids: List of game IDs to generate ensemble predictions for.
