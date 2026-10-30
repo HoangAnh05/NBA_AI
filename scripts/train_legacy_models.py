@@ -121,8 +121,10 @@ def load_data(
     Validation: the remaining games in ``recent_season`` plus all games in
     ``val_season``.
 
-    By default, ``2025-2026`` is used as the validation season and its
-    preceding season is used as ``recent_season``. ``cutoff_date`` limits the
+    By default, the latest season present in the database is used as the
+    validation season and the latest earlier available season is used as
+    ``recent_season``. If no earlier season is available, the validation
+    season is split chronologically instead. ``cutoff_date`` limits the
     loaded games before the split.
 
     Returns (X_train, y_train, X_val, y_val, meta) where meta has counts.
@@ -157,14 +159,17 @@ def load_data(
     if df.empty:
         raise ValueError("No games available for training.")
 
+    available_seasons = sorted(df["season"].dropna().unique().tolist())
     if val_season is None:
-        val_season = "2025-2026"
+        val_season = available_seasons[-1]
     if recent_season is None:
-        recent_season = f"{int(val_season[:4]) - 1}-{val_season[:4]}"
+        earlier_seasons = [season for season in available_seasons if season < val_season]
+        # A newly initialized database may contain only one season. In that
+        # case, split that season chronologically rather than requiring a
+        # season that is not present.
+        recent_season = earlier_seasons[-1] if earlier_seasons else val_season
     if not 0 < recent_val_pct < 100:
         raise ValueError("recent_val_pct must be between 0 and 100.")
-    if recent_season == val_season:
-        raise ValueError("recent_season and val_season must be different.")
     if val_season not in set(df["season"]):
         raise ValueError(f"Validation season {val_season!r} is not present in the data.")
     if recent_season not in set(df["season"]):
@@ -200,7 +205,13 @@ def load_data(
     recent_train_mask[recent_indices[:split_idx]] = True
     recent_val_mask = np.zeros(len(df), dtype=bool)
     recent_val_mask[recent_indices[split_idx:]] = True
-    current_val_mask = (df["season"] == val_season).to_numpy()
+    # When no earlier season exists, recent_season == val_season and the
+    # chronological tail above is the only validation set available.
+    current_val_mask = (
+        (df["season"] == val_season).to_numpy()
+        if recent_season != val_season
+        else np.zeros(len(df), dtype=bool)
+    )
     val_mask = recent_val_mask | current_val_mask
     train_mask = (df["season"] < recent_season).to_numpy() | recent_train_mask
     if not train_mask.any():
@@ -246,7 +257,11 @@ def load_data(
                 (len(recent_indices) - split_idx) / len(recent_indices) * 100, 1
             ),
             "current_season": val_season,
-            "current_season_strategy": "all available games",
+            "current_season_strategy": (
+                "all available games"
+                if recent_season != val_season
+                else "chronological tail (no earlier season available)"
+            ),
         },
         "scaler_mean": train_mean,
         "scaler_std": train_std,
@@ -432,7 +447,7 @@ def train_mlp(X_train, y_train, X_val, y_val, meta):
     log.info("TRAINING: MLP (PyTorch)")
     log.info("=" * 60)
 
-    hidden_sizes = [256, 128, 64]
+    hidden_sizes = [128, 64]
     dropout = 0.2
     lr = 0.001
     epochs = 200
@@ -677,7 +692,7 @@ def parse_args():
     parser.add_argument(
         "--val-season",
         default=None,
-        help="Current season held out in full for validation (default: 2025-2026)",
+        help="Season held out for validation (default: latest season in the database)",
     )
     parser.add_argument(
         "--recent-season",
@@ -712,7 +727,7 @@ def main():
     print("=" * 60)
     print(f"  Models:      {args.models}")
     print(f"  Cutoff date: {args.cutoff_date or 'none'}")
-    print(f"  Val season:  {args.val_season or '2025-2026'}")
+    print(f"  Val season:  {args.val_season or 'latest available season'}")
     print(f"  Recent season: {args.recent_season or 'derived from val season'}")
     print(f"  Recent val %%:  {args.recent_val_pct:g}")
     if "xgboost" in args.models:
