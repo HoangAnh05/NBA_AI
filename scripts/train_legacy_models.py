@@ -6,7 +6,8 @@ Trains on Features table (43 features) to predict home_score + away_score.
 
 Improvements over v0.4 (src/model_training/train.py):
 - Uses all available seasons for training
-- Splits the current season chronologically into 85% training and 15% validation
+- Holds out the final part of the previous season and the selected season
+  in full for validation
 - Optional cutoff date support for temporal splits
 - Optuna hyperparameter tuning for XGBoost (50 trials)
 - Larger MLP with BatchNorm + Huber loss + CosineAnnealingLR
@@ -106,17 +107,23 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def load_data(cutoff_date: str | None = None, val_season: str | None = None):
+def load_data(
+    cutoff_date: str | None = None,
+    val_season: str | None = None,
+    recent_season: str | None = None,
+    recent_val_pct: float = 10.0,
+):
     """
     Load features + final scores from the database.
 
-    Training: all seasons before the validation season, plus the first 85% of
-    the validation season in chronological order.
-    Validation: the final 15% of the validation season in chronological order.
+    Training: all seasons before ``recent_season`` plus the first
+    ``100 - recent_val_pct`` percent of ``recent_season``.
+    Validation: the remaining games in ``recent_season`` plus all games in
+    ``val_season``.
 
-    By default, the latest season present in the loaded data is used as the
-    validation season. ``val_season`` can override that selection. If supplied,
-    ``cutoff_date`` limits the loaded games before the split.
+    By default, ``2025-2026`` is used as the validation season and its
+    preceding season is used as ``recent_season``. ``cutoff_date`` limits the
+    loaded games before the split.
 
     Returns (X_train, y_train, X_val, y_val, meta) where meta has counts.
     """
@@ -152,8 +159,16 @@ def load_data(cutoff_date: str | None = None, val_season: str | None = None):
 
     if val_season is None:
         val_season = "2025-2026"
+    if recent_season is None:
+        recent_season = f"{int(val_season[:4]) - 1}-{val_season[:4]}"
+    if not 0 < recent_val_pct < 100:
+        raise ValueError("recent_val_pct must be between 0 and 100.")
+    if recent_season == val_season:
+        raise ValueError("recent_season and val_season must be different.")
     if val_season not in set(df["season"]):
         raise ValueError(f"Validation season {val_season!r} is not present in the data.")
+    if recent_season not in set(df["season"]):
+        raise ValueError(f"Recent season {recent_season!r} is not present in the data.")
 
     # Parse JSON feature_set into columns
     log.info("  Parsing feature JSON...")
@@ -169,22 +184,37 @@ def load_data(cutoff_date: str | None = None, val_season: str | None = None):
     # Targets
     y = df[["home_score", "away_score"]].values.astype(np.float64)
 
-    # Split chronologically: older seasons are all training data, while the
-    # current/selected season is split into an 85% train and 15% validation
-    # window to avoid using future games for training.
-    season_mask = df["season"] == val_season
-    season_indices = np.flatnonzero(season_mask.to_numpy())
-    if len(season_indices) < 2:
+    recent_indices = np.flatnonzero((df["season"] == recent_season).to_numpy())
+    if len(recent_indices) < 2:
         raise ValueError(
-            f"Validation season {val_season!r} needs at least two games to split."
+            f"Recent season {recent_season!r} needs at least two games to split."
         )
-    split_idx = max(1, min(len(season_indices) - 1, int(len(season_indices) * 0.85)))
-    is_val = np.zeros(len(df), dtype=bool)
-    is_val[season_indices[split_idx:]] = True
+    split_idx = max(
+        1,
+        min(
+            len(recent_indices) - 1,
+            int(len(recent_indices) * (1 - recent_val_pct / 100)),
+        ),
+    )
+    recent_train_mask = np.zeros(len(df), dtype=bool)
+    recent_train_mask[recent_indices[:split_idx]] = True
+    recent_val_mask = np.zeros(len(df), dtype=bool)
+    recent_val_mask[recent_indices[split_idx:]] = True
+    current_val_mask = (df["season"] == val_season).to_numpy()
+    val_mask = recent_val_mask | current_val_mask
+    train_mask = (df["season"] < recent_season).to_numpy() | recent_train_mask
+    if not train_mask.any():
+        raise ValueError(
+            f"No training games remain before recent validation season "
+            f"{recent_season!r}."
+        )
+    if not val_mask.any():
+        raise ValueError("Validation set has no games.")
+
     X_all = features_df.values.astype(np.float64)
 
-    X_train_raw, y_train = X_all[~is_val], y[~is_val]
-    X_val_raw, y_val = X_all[is_val], y[is_val]
+    X_train_raw, y_train = X_all[train_mask], y[train_mask]
+    X_val_raw, y_val = X_all[val_mask], y[val_mask]
 
     # Impute missing with training mean, then standardize
     train_mean = np.nanmean(X_train_raw, axis=0)
@@ -201,8 +231,8 @@ def load_data(cutoff_date: str | None = None, val_season: str | None = None):
     X_val = (X_val_imputed - train_mean) / train_std
 
     # Collect season counts for metadata
-    train_seasons = sorted(df.loc[~is_val, "season"].unique().tolist())
-    val_seasons = sorted(df.loc[is_val, "season"].unique().tolist())
+    train_seasons = sorted(df.loc[train_mask, "season"].unique().tolist())
+    val_seasons = sorted(df.loc[val_mask, "season"].unique().tolist())
 
     meta = {
         "n_train": len(X_train),
@@ -210,11 +240,13 @@ def load_data(cutoff_date: str | None = None, val_season: str | None = None):
         "train_seasons": train_seasons,
         "val_seasons": val_seasons,
         "season_split": {
-            "season": val_season,
-            "train_pct": round(split_idx / len(season_indices) * 100, 1),
-            "val_pct": round(
-                (len(season_indices) - split_idx) / len(season_indices) * 100, 1
+            "recent_season": recent_season,
+            "recent_train_pct": round(split_idx / len(recent_indices) * 100, 1),
+            "recent_val_pct": round(
+                (len(recent_indices) - split_idx) / len(recent_indices) * 100, 1
             ),
+            "current_season": val_season,
+            "current_season_strategy": "all available games",
         },
         "scaler_mean": train_mean,
         "scaler_std": train_std,
@@ -645,7 +677,18 @@ def parse_args():
     parser.add_argument(
         "--val-season",
         default=None,
-        help="Season to split 85%%/15%% (default: latest season in the data)",
+        help="Current season held out in full for validation (default: 2025-2026)",
+    )
+    parser.add_argument(
+        "--recent-season",
+        default=None,
+        help="Previous season to split; defaults to the season before --val-season",
+    )
+    parser.add_argument(
+        "--recent-val-pct",
+        type=float,
+        default=10.0,
+        help="Final percentage of --recent-season used for validation (default: 10)",
     )
     parser.add_argument(
         "--xgb-trials",
@@ -669,13 +712,20 @@ def main():
     print("=" * 60)
     print(f"  Models:      {args.models}")
     print(f"  Cutoff date: {args.cutoff_date or 'none'}")
-    print(f"  Val season:  {args.val_season or 'latest season'}")
+    print(f"  Val season:  {args.val_season or '2025-2026'}")
+    print(f"  Recent season: {args.recent_season or 'derived from val season'}")
+    print(f"  Recent val %%:  {args.recent_val_pct:g}")
     if "xgboost" in args.models:
         print(f"  XGB trials:  {args.xgb_trials}")
     print()
 
     # Load data
-    X_train, y_train, X_val, y_val, meta = load_data(args.cutoff_date, args.val_season)
+    X_train, y_train, X_val, y_val, meta = load_data(
+        args.cutoff_date,
+        args.val_season,
+        args.recent_season,
+        args.recent_val_pct,
+    )
 
     if args.dry_run:
         print("\n[DRY RUN] Data loaded successfully. No training performed.")

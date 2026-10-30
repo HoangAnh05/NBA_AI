@@ -44,9 +44,9 @@ python scripts/train_legacy_models.py
 
 This trains Ridge, XGBoost, and MLP using the script defaults:
 
-- Validation season: the latest season present in the database
-- Current-season split: the first 85% of games for training and the final 15%
-  for validation, in chronological order
+- Previous season: the first 90% of games for training and the final 10% for
+  validation, in chronological order
+- Current validation season: all available games for validation
 - Cutoff date: none (use `--cutoff-date` to restrict the loaded games)
 - XGBoost Optuna trials: `50`
 
@@ -78,19 +78,23 @@ python scripts/train_legacy_models.py --models xgboost mlp
 
 ## Change the validation split
 
-Use `--val-season` to select a different season for the 85%/15% split and
-`--cutoff-date` to exclude games on or after a specific date:
+Use `--val-season` to select the current season, `--recent-season` to select
+the previous season, and `--recent-val-pct` to change the previous-season
+validation percentage. Use `--cutoff-date` to exclude games on or after a
+specific date:
 
 ```bash
-python scripts/train_legacy_models.py \
-  --models ridge xgboost mlp \
-  --val-season 2024-2025 \
-  --cutoff-date 2025-04-01
+python3 scripts/train_legacy_models.py \
+  --models xgboost \
+  --recent-season 2025-2026 \
+  --val-season 2026-2027 \
+  --recent-val-pct 10 \
+  --xgb-trials 50
 ```
 
-All seasons other than the selected validation season are used for training.
-The selected season's earliest 85% of games are added to training, and its
-latest 15% are reserved for validation.
+All seasons before `2025-2026` are used for training. The earliest 90% of
+`2025-2026` games are also used for training, while its latest 10% and all
+available `2026-2027` games are reserved for validation.
 
 ## Change XGBoost tuning time
 
