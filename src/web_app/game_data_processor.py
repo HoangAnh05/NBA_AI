@@ -28,6 +28,8 @@ from src.utils import NBATeamConverter, get_player_image, log_execution_time
 from src.web_app.dashboard import ats_result
 
 TEAM_LOGOS_DIR = Path(__file__).parent / "static" / "img" / "team_logos"
+HIGH_CONFIDENCE_WIN_PROBABILITY = 0.70
+BETTING_LINE_MARGIN_TOLERANCE = 3.0
 
 
 def get_user_datetime(as_eastern_tz=False):
@@ -219,6 +221,9 @@ def process_game_data(games, user_tz=None):
         outbound_game_data["vegas_line_kind"] = (
             "Closing" if closing_spread is not None else "Opening" if line is not None else ""
         )
+        outbound_game_data["betting_recommendation"] = _classify_betting_recommendation(
+            pred_win_pct, pred_spread, line
+        )
 
         # Determine if predicted winner was correct (for completed games)
         if (
@@ -270,6 +275,29 @@ def process_game_data(games, user_tz=None):
         outbound_games.append(outbound_game_data)
 
     return outbound_games
+
+
+def _classify_betting_recommendation(pred_win_pct, pred_spread, betting_line):
+    """Classify a prediction against a betting line.
+
+    Both spreads use the home-team perspective: ``pred_spread`` is positive
+    for a predicted home advantage, while the stored Vegas line is negative
+    when the home team is favored.  Converting the latter before comparing
+    keeps the margin difference independent of which team is favored.
+    """
+    if pred_win_pct == "" or pred_spread == "" or betting_line is None:
+        return ""
+
+    market_margin = -betting_line
+    recommendation = (
+        "POSITIVE" if pred_spread > market_margin else "NEGATIVE"
+    )
+    if (
+        pred_win_pct > HIGH_CONFIDENCE_WIN_PROBABILITY
+        and abs(pred_spread - market_margin) <= BETTING_LINE_MARGIN_TOLERANCE
+    ):
+        return "POSITIVE"
+    return recommendation
 
 
 def _process_team_names(game):

@@ -39,6 +39,7 @@ def test_preseason_hides_existing_forecasts_and_explains_unavailability():
         "pred_home_score", "pred_away_score", "pred_winner", "pred_win_pct", "pred_spread"
     ):
         assert displayed[field] == ""
+    assert displayed["betting_recommendation"] == ""
     assert displayed["home_players"] == []
     assert displayed["pred_winner_correct"] is None
 
@@ -55,4 +56,5 @@ def test_supported_games_keep_their_forecasts(season_type):
     assert displayed["pred_winner"] == "BOS"
     assert displayed["pred_win_pct"] == "70%"
     assert displayed["pred_spread"] == "BOS by 6.0"
+    assert displayed["betting_recommendation"] == ""
     assert displayed["home_players"][0]["pred_points"] == 20
