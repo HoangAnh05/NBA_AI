@@ -258,6 +258,7 @@ def process_game_data(games, user_tz=None):
                 pred_spread,
                 closing_spread,
                 outbound_game_data["home_score"] - outbound_game_data["away_score"],
+                pred_home_win_pct,
             )
             outbound_game_data["pred_ats_win"] = None if result == "P" else result == "W"
         else:

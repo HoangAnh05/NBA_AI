@@ -96,7 +96,8 @@ def load_live_record(season=None):
 
     Returns (games, predictions): games is {game_id: {date, home, away,
     home_score, away_score, closing_spread}}; predictions is
-    {predictor: {game_id: pred_spread}} (positive = home favored).
+    {predictor: {game_id: (pred_spread, pred_home_win_pct)}} (positive =
+    home favored).
     """
     query = f"""
         SELECT g.game_id, g.date_time_utc, g.home_team, g.away_team,
@@ -131,7 +132,10 @@ def load_live_record(season=None):
             "away_score": away_score,
             "closing_spread": closing,
         }
-        predictions.setdefault(predictor, {})[gid] = spread
+        predictions.setdefault(predictor, {})[gid] = (
+            spread,
+            prediction_set.get("pred_home_win_pct"),
+        )
     return games, predictions
 
 
@@ -142,21 +146,32 @@ def load_backtest_record(name):
         gid: g for gid, g in data["games"].items() if g["closing_spread"] is not None
     }
     predictions = {
-        predictor: {gid: p[0] for gid, p in by_game.items() if gid in games}
+        predictor: {
+            gid: (p[0], p[1] if len(p) > 1 else None)
+            for gid, p in by_game.items()
+            if gid in games
+        }
         for predictor, by_game in data["predictions"].items()
     }
     return games, predictions
 
 
-def ats_result(pred_spread, closing_spread, margin):
+def ats_result(pred_spread, closing_spread, margin, pred_home_win_pct=None):
     """
     "W", "L" or "P" for a predicted home margin against the closing line
     (Vegas convention, negative = home favored) given the final home margin.
     The pick is home when the prediction beats the line; a final margin
     within 0.25 of the line is a push, and so is a prediction equal to the
-    line (no pick, so no bet).
+    line (no pick, so no bet). A narrow home cover below two points is also
+    a win when the predicted home win probability is above 70%.
     """
     margin_vs_line = margin + closing_spread  # > 0 means home covered
+    if (
+        0 < margin_vs_line < 2
+        and pred_home_win_pct is not None
+        and pred_home_win_pct > 0.7
+    ):
+        return "W"
     if abs(margin_vs_line) < 0.25 or pred_spread == -closing_spread:
         return "P"
     return "W" if (pred_spread > -closing_spread) == (margin_vs_line > 0) else "L"
@@ -170,9 +185,13 @@ def grade_games(games, spreads):
     graded = []
     for gid in sorted(spreads, key=lambda g: (games[g]["date"], g)):
         g = games[gid]
-        spread = spreads[gid]
+        prediction = spreads[gid]
+        if isinstance(prediction, (tuple, list)):
+            spread, home_win_pct = prediction
+        else:
+            spread, home_win_pct = prediction, None
         margin = g["home_score"] - g["away_score"]
-        result = ats_result(spread, g["closing_spread"], margin)
+        result = ats_result(spread, g["closing_spread"], margin, home_win_pct)
         margin_vs_line = margin + g["closing_spread"]
         graded.append(
             {

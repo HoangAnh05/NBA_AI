@@ -96,9 +96,17 @@ def test_saved_backtest_loads_as_a_record(tmp_path, monkeypatch):
     monkeypatch.setattr(dashboard_module, "BACKTESTS_DIR", tmp_path)
     loaded_games, predictions = dashboard_module.load_backtest_record("2025-2026")
     assert set(loaded_games) == {"g1"}
-    assert predictions == {"Tree": {"g1": 4.0}}
+    assert predictions == {"Tree": {"g1": (4.0, 0.6)}}
     monkeypatch.setattr(dashboard_module, "_live_seasons", lambda: [])
     assert dashboard_module.list_records() == [
         {"id": "backtest-2025-2026", "label": "2025-26 Backtest", "note": "n",
          "season_type": "Regular Season"}
     ]
+
+
+def test_ats_result_uses_high_home_win_probability_for_narrow_cover():
+    ats = dashboard_module.ats_result
+
+    assert ats(0.0, -3.0, 3.1, 0.71) == "W"
+    assert ats(0.0, -3.0, 3.1, 0.70) == "L"
+    assert ats(0.0, -3.0, 5.0, 0.71) == "L"
