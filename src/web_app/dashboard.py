@@ -167,7 +167,7 @@ def ats_result(pred_spread, closing_spread, margin, pred_home_win_pct=None):
     """
     margin_vs_line = margin + closing_spread  # > 0 means home covered
     if (
-        0 < margin_vs_line < 2
+        0 < margin_vs_line < 2.5
         and pred_home_win_pct is not None
         and pred_home_win_pct > 0.7
     ):
