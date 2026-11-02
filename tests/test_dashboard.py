@@ -110,3 +110,33 @@ def test_ats_result_uses_high_home_win_probability_for_narrow_cover():
     assert ats(0.0, -3.0, 3.1, 0.71) == "W"
     assert ats(0.0, -3.0, 3.1, 0.70) == "L"
     assert ats(0.0, -3.0, 5.0, 0.71) == "L"
+
+
+def test_summary_includes_winner_prediction_precision():
+    graded = [
+        {"ats_result": "W", "home_covered": True, "winner_correct": True,
+         "abs_error": 1.0, "vegas_abs_error": 2.0},
+        {"ats_result": "L", "home_covered": False, "winner_correct": False,
+         "abs_error": 2.0, "vegas_abs_error": 1.0},
+        {"ats_result": "P", "home_covered": None, "winner_correct": True,
+         "abs_error": 3.0, "vegas_abs_error": 0.0},
+    ]
+
+    summary = dashboard_module.summarize(graded)
+
+    assert summary["winner_pct"] == 66.7
+
+
+def test_grade_games_tracks_winner_prediction_from_win_probability():
+    games = {
+        "home-win": _game(margin=5),
+        "away-win": _game(margin=-5),
+    }
+    predictions = {
+        "home-win": (3.0, 0.6),
+        "away-win": (3.0, 0.4),
+    }
+
+    graded = dashboard_module.grade_games(games, predictions)
+
+    assert [game["winner_correct"] for game in graded] == [True, True]

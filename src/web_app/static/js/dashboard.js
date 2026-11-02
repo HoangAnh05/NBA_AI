@@ -186,6 +186,7 @@ function renderComparison(comparison, record, selected) {
       const cells = [
         [row.predictor, ""],
         [`${row.ats_pct.toFixed(1)}%`, "text-end"],
+        [`${row.winner_pct.toFixed(1)}%`, "text-end"],
         [
           `${row.roi >= 0 ? "+" : ""}${row.roi.toFixed(1)}%`,
           `text-end ${row.roi >= 0 ? "text-profit" : "text-loss"}`,

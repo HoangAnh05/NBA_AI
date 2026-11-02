@@ -204,6 +204,10 @@ def grade_games(games, spreads):
                 "closing_spread": round(g["closing_spread"], 1),
                 "ats_result": result,
                 "home_covered": None if result == "P" else margin_vs_line > 0,
+                "winner_correct": (
+                    (home_win_pct >= 0.5 if home_win_pct is not None else spread > 0)
+                    == (margin > 0)
+                ),
                 "abs_error": round(abs(spread - margin), 1),
                 "vegas_abs_error": abs(g["closing_spread"] + margin),
             }
@@ -212,7 +216,7 @@ def grade_games(games, spreads):
 
 
 def summarize(graded):
-    """ATS record, ROI at -110 and spread MAE (with baselines) for graded games."""
+    """ATS record, winner precision, ROI at -110 and spread MAE."""
     wins = sum(g["ats_result"] == "W" for g in graded)
     losses = sum(g["ats_result"] == "L" for g in graded)
     decided = wins + losses
@@ -227,6 +231,7 @@ def summarize(graded):
         "ats_losses": losses,
         "ats_pushes": n - decided,
         "ats_pct": pct(wins, decided),
+        "winner_pct": pct(sum(g["winner_correct"] for g in graded), n),
         "always_home_ats_pct": pct(
             sum(bool(g["home_covered"]) for g in graded), decided
         ),
