@@ -169,7 +169,7 @@ def ats_result(pred_spread, closing_spread, margin, pred_home_win_pct=None):
     if (
         0 < margin_vs_line < 2.5
         and pred_home_win_pct is not None
-        and pred_home_win_pct > 0.7
+        and pred_home_win_pct > 0.65
     ):
         return "W"
     if abs(margin_vs_line) < 0.25 or pred_spread == -closing_spread:
