@@ -18,12 +18,12 @@
   },
   "cutoff_date": null,
   "metrics": {
-    "home_mae": 9.988,
-    "away_mae": 10.869,
-    "avg_score_mae": 10.429,
-    "spread_mae": 13.85,
-    "win_accuracy": 0.6244,
-    "n_samples": 221
+    "home_mae": 9.969,
+    "away_mae": 10.549,
+    "avg_score_mae": 10.259,
+    "spread_mae": 13.335,
+    "win_accuracy": 0.626,
+    "n_samples": 254
   },
   "hyperparameters": {
     "alpha": 300.0,
@@ -75,5 +75,5 @@
     "Rest_Days_Diff",
     "Game_Freq_Diff"
   ],
-  "created_at": "2026-11-01T21:48:59.411905"
+  "created_at": "2026-11-05T12:11:27.373625"
 }
