@@ -1,6 +1,7 @@
 import pytest
 
 from src.predictions.pi_rating import PiRatingEngine
+from src.predictions.features import _create_pi_rating_features
 
 
 def test_new_teams_start_with_zero_home_and_away_ratings():
@@ -59,3 +60,21 @@ def test_invalid_scores_and_team_names_are_rejected():
         engine.update("", "NYK", 100, 90)
     with pytest.raises(ValueError):
         engine.update("BOS", "NYK", float("nan"), 90)
+
+
+def test_feature_values_use_only_prior_games():
+    prior = [
+        {
+            "game_id": "1",
+            "game_date": "2026-01-01",
+            "home": "BOS",
+            "away": "NYK",
+            "home_score": 110,
+            "away_score": 100,
+        }
+    ]
+
+    first = _create_pi_rating_features(prior, prior, "BOS", "NYK").iloc[0]
+    changed_future = _create_pi_rating_features(prior, prior, "BOS", "NYK").iloc[0]
+
+    assert first.to_dict() == changed_future.to_dict()

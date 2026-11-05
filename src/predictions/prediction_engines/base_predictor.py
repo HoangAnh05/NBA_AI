@@ -144,13 +144,39 @@ class BaseMLPredictor(BasePredictor):
     def _standardize(features: list[dict], mean, std) -> np.ndarray:
         """Feature matrix with missing values set to the training mean (as in
         training), then standardized. Without a scaler, missing values are 0."""
+        expected_features = len(mean) if mean is not None else None
         values = np.array(
-            [[np.nan if v is None else v for v in row.values()] for row in features],
+            [
+                [
+                    np.nan if v is None else v
+                    for v in (
+                        list(row.values())[:expected_features]
+                        if expected_features is not None
+                        else row.values()
+                    )
+                ]
+                for row in features
+            ],
             dtype=np.float64,
         )
         if mean is None:
             return np.nan_to_num(values)
         mean, std = np.asarray(mean, dtype=np.float64), np.asarray(std, dtype=np.float64)
+        if values.shape[1] > len(mean):
+            # Keep older 43-feature artifacts usable after append-only feature
+            # expansion. Newly trained artifacts have matching dimensions and
+            # therefore retain the Pi-rating columns.
+            logging.warning(
+                "Model scaler has %d features but inputs have %d; "
+                "ignoring appended features for this legacy model.",
+                len(mean),
+                values.shape[1],
+            )
+        elif values.shape[1] < len(mean):
+            raise ValueError(
+                f"Model expects {len(mean)} features but inputs contain "
+                f"{values.shape[1]}."
+            )
         return (np.where(np.isnan(values), mean, values) - mean) / std
 
     @abstractmethod

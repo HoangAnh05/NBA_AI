@@ -2,7 +2,7 @@
 train_legacy_models.py
 
 Training script for legacy NBA prediction models (Ridge, XGBoost, MLP).
-Trains on Features table (43 features) to predict home_score + away_score.
+Trains on Features table (47 features) to predict home_score + away_score.
 
 Improvements over v0.4 (src/model_training/train.py):
 - Uses all available seasons for training
@@ -42,57 +42,11 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.config import config
 from src.database import get_db
 from src.model_training.models import MLPv2
+from src.predictions.features import FEATURE_NAMES
 
 DB_PATH = config["database"]["path"]
 MODELS_DIR = PROJECT_ROOT / "models"
 MODEL_VERSION = "0.5"
-
-# 43 feature names in canonical order
-FEATURE_NAMES = [
-    "Home_Win_Pct",
-    "Home_PPG",
-    "Home_OPP_PPG",
-    "Home_Net_PPG",
-    "Away_Win_Pct",
-    "Away_PPG",
-    "Away_OPP_PPG",
-    "Away_Net_PPG",
-    "Win_Pct_Diff",
-    "PPG_Diff",
-    "OPP_PPG_Diff",
-    "Net_PPG_Diff",
-    "Home_Win_Pct_Home",
-    "Home_PPG_Home",
-    "Home_OPP_PPG_Home",
-    "Home_Net_PPG_Home",
-    "Away_Win_Pct_Away",
-    "Away_PPG_Away",
-    "Away_OPP_PPG_Away",
-    "Away_Net_PPG_Away",
-    "Win_Pct_Home_Away_Diff",
-    "PPG_Home_Away_Diff",
-    "OPP_PPG_Home_Away_Diff",
-    "Net_PPG_Home_Away_Diff",
-    "Time_Decay_Home_Win_Pct",
-    "Time_Decay_Home_PPG",
-    "Time_Decay_Home_OPP_PPG",
-    "Time_Decay_Home_Net_PPG",
-    "Time_Decay_Away_Win_Pct",
-    "Time_Decay_Away_PPG",
-    "Time_Decay_Away_OPP_PPG",
-    "Time_Decay_Away_Net_PPG",
-    "Time_Decay_Win_Pct_Diff",
-    "Time_Decay_PPG_Diff",
-    "Time_Decay_OPP_PPG_Diff",
-    "Time_Decay_Net_PPG_Diff",
-    "Day_of_Season",
-    "Home_Rest_Days",
-    "Home_Game_Freq",
-    "Away_Rest_Days",
-    "Away_Game_Freq",
-    "Rest_Days_Diff",
-    "Game_Freq_Diff",
-]
 
 logging.basicConfig(
     level=logging.INFO,

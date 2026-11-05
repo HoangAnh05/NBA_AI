@@ -41,6 +41,7 @@ from src.database_updater.prior_states import (
     load_prior_states,
 )
 from src.logging_config import setup_logging
+from src.predictions.pi_rating import PiRatingEngine
 from src.utils import log_execution_time, lookup_basic_game_info, to_eastern_date
 
 # Configuration
@@ -60,6 +61,8 @@ FEATURE_NAMES = [
     "Time_Decay_Win_Pct_Diff", "Time_Decay_PPG_Diff", "Time_Decay_OPP_PPG_Diff",
     "Time_Decay_Net_PPG_Diff", "Day_of_Season", "Home_Rest_Days", "Home_Game_Freq",
     "Away_Rest_Days", "Away_Game_Freq", "Rest_Days_Diff", "Game_Freq_Diff",
+    "pi_rating_home", "pi_rating_away", "pi_rating_diff",
+    "pi_rating_form_diff_10g",
 ]
 
 
@@ -150,6 +153,12 @@ def create_feature_sets(prior_states_dict, db_path=DB_PATH):
             home_schedule_df, away_schedule_df, game_date,
             season_start=to_eastern_date(season_start) if season_start else None,
         )
+        pi_rating_features_df = _create_pi_rating_features(
+            home_prior_states,
+            away_prior_states,
+            home_team,
+            away_team,
+        )
 
         # Concatenate all the features into a single DataFrame
         features_df = pd.concat(
@@ -158,6 +167,7 @@ def create_feature_sets(prior_states_dict, db_path=DB_PATH):
                 contextual_features_df,
                 time_decay_features_df,
                 rest_and_day_of_season_features_df,
+                pi_rating_features_df,
             ],
             axis=1,
         )
@@ -199,6 +209,84 @@ def create_feature_sets(prior_states_dict, db_path=DB_PATH):
         )
 
     return features_dict
+
+
+def _create_pi_rating_features(
+    home_prior_states,
+    away_prior_states,
+    home_team,
+    away_team,
+    form_games=10,
+):
+    """Create pre-game Pi-rating features from the supplied prior games.
+
+    The prior-state lists contain only completed games before the target game.
+    They are deduplicated and replayed chronologically, so every rating is
+    read before its corresponding game is applied to the engine.
+    """
+    games_by_id = {
+        state["game_id"]: state
+        for state in [*home_prior_states, *away_prior_states]
+        if state.get("game_id") is not None
+    }
+    games = sorted(
+        games_by_id.values(),
+        key=lambda state: (state.get("game_date") or "", state["game_id"]),
+    )
+
+    engine = PiRatingEngine()
+    for state in games:
+        engine.update(
+            state["home"],
+            state["away"],
+            state["home_score"],
+            state["away_score"],
+        )
+
+    home_ratings = engine.get_ratings(home_team)
+    away_ratings = engine.get_ratings(away_team)
+
+    team_game_ids = {
+        state["game_id"]
+        for state in games
+        if state["home"] in (home_team, away_team)
+        or state["away"] in (home_team, away_team)
+    }
+    recent_games = [
+        state
+        for state in games
+        if state["game_id"] in team_game_ids
+    ]
+    recent_team_games = {
+        team: [
+            state
+            for state in recent_games
+            if state["home"] == team or state["away"] == team
+        ][-form_games:]
+        for team in (home_team, away_team)
+    }
+    recent_game_ids = {
+        state["game_id"]
+        for states in recent_team_games.values()
+        for state in states
+    }
+
+    form_engine = PiRatingEngine()
+    for state in recent_games:
+        if state["game_id"] in recent_game_ids:
+            form_engine.update(
+                state["home"],
+                state["away"],
+                state["home_score"],
+                state["away_score"],
+            )
+
+    return pd.DataFrame([{
+        "pi_rating_home": home_ratings["home"],
+        "pi_rating_away": away_ratings["away"],
+        "pi_rating_diff": engine.predict_diff(home_team, away_team),
+        "pi_rating_form_diff_10g": form_engine.predict_diff(home_team, away_team),
+    }])
 
 
 @log_execution_time(average_over="feature_sets")
