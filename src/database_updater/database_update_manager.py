@@ -49,7 +49,7 @@ from src.database_updater.prior_states import (
 )
 from src.database_updater.schedule import update_schedule
 from src.logging_config import setup_logging
-from src.predictions.features import create_feature_sets, save_feature_sets
+from src.predictions.features import FEATURE_NAMES, create_feature_sets, save_feature_sets
 from src.predictions.prediction_manager import make_pre_game_predictions
 from src.utils import log_execution_time, lookup_basic_game_info
 
@@ -1253,7 +1253,11 @@ def get_games_with_incomplete_pre_game_data(season, db_path=DB_PATH):
     if season == "Current":
         season = determine_current_season()
 
-    query = """
+    required_feature_checks = " OR ".join(
+        f"json_type(f.feature_set, '$.{name}') IS NULL"
+        for name in FEATURE_NAMES
+    )
+    query = f"""
     SELECT game_id
     FROM Games
     WHERE season = ?
@@ -1271,7 +1275,9 @@ def get_games_with_incomplete_pre_game_data(season, db_path=DB_PATH):
       AND g1.season_type IN ("Regular Season", "Post Season")
       AND (g1.pre_game_data_finalized = 0 OR NOT EXISTS (
           SELECT 1 FROM Features f
-          WHERE f.game_id = g1.game_id AND LENGTH(f.feature_set) > 10
+          WHERE f.game_id = g1.game_id
+            AND json_valid(f.feature_set)
+            AND NOT ({required_feature_checks})
       ))  -- Retry opening games finalized with empty features by older code
       AND g1.status = 1  -- Not Started
       AND g1.status_text != 'PPD'  -- Exclude postponed games

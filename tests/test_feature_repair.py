@@ -1,8 +1,10 @@
-"""Previously finalized empty opener features must be retried."""
+"""Previously finalized incomplete opener features must be retried."""
 
+import json
 import sqlite3
 
 from src.database_updater.database_update_manager import get_games_with_incomplete_pre_game_data
+from src.predictions.features import FEATURE_NAMES
 
 
 def test_retry_finalized_empty_features_only_for_upcoming_supported_games(tmp_path):
@@ -23,8 +25,9 @@ def test_retry_finalized_empty_features_only_for_upcoming_supported_games(tmp_pa
             ("preseason", "Pre Season", 1, "Scheduled", "2026-10-20T23:30:00Z"),
             ("postponed", "Regular Season", 1, "PPD", "2026-10-20T23:30:00Z"),
         ])
+        complete = json.dumps({name: 0 for name in FEATURE_NAMES})
         conn.executemany("INSERT INTO Features VALUES (?, ?)", [
-            ("empty", "{}"), ("valid", '{"Home_PPG": 110}'), ("final", "{}"),
+            ("empty", "{}"), ("valid", complete), ("final", "{}"),
             ("preseason", "{}"), ("postponed", "{}"),
         ])
     assert get_games_with_incomplete_pre_game_data("2026-2027", path) == ["empty"]
