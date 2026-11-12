@@ -18,12 +18,12 @@
   },
   "cutoff_date": null,
   "metrics": {
-    "home_mae": 9.993,
-    "away_mae": 10.409,
-    "avg_score_mae": 10.201,
-    "spread_mae": 13.412,
-    "win_accuracy": 0.6314,
-    "n_samples": 293
+    "home_mae": 9.854,
+    "away_mae": 10.395,
+    "avg_score_mae": 10.125,
+    "spread_mae": 13.361,
+    "win_accuracy": 0.6304,
+    "n_samples": 303
   },
   "hyperparameters": {
     "alpha": 300.0,
@@ -79,5 +79,5 @@
     "pi_rating_diff",
     "pi_rating_form_diff_10g"
   ],
-  "created_at": "2026-11-11T09:52:17.558758"
+  "created_at": "2026-11-12T08:50:44.603626"
 }
