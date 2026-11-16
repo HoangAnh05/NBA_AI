@@ -12,7 +12,7 @@ from numbers import Real
 class PiRatingEngine:
     """Track home and away Pi-ratings without using future game results."""
 
-    def __init__(self, lr_lambda: float = 0.4, gamma: float = 0.80):
+    def __init__(self, lr_lambda: float = 0.2, gamma: float = 0.85):
         if lr_lambda < 0:
             raise ValueError("lr_lambda must be non-negative.")
         if gamma < 0:
