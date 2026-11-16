@@ -144,6 +144,28 @@ For each combination:
 
 Do not reuse the same engine state between parameter combinations.
 
+### Rolling-origin validation
+
+The implementation also provides `run_rolling_grid_search()`, which uses
+expanding training windows instead of one fixed 70/30 split. For example:
+
+```python
+from src.predictions.pi_rating_optimization import run_rolling_grid_search
+
+search = run_rolling_grid_search(
+    season_games,
+    initial_train_size=0.50,
+    validation_size=0.10,
+)
+```
+
+Each validation window is predicted before its games are used for updates.
+The returned `results` aggregate metrics over all windows, while
+`window_results` keeps metrics for each window so parameter stability can be
+checked. Use a fixed `step_size` to control how far the expanding origin moves;
+the default equals `validation_size`, producing non-overlapping validation
+segments.
+
 ------------------------------------------------------------------------
 
 ## 5. Metrics to compare
