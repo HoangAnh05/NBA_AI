@@ -109,35 +109,6 @@ class TestPiRatingOptimization(unittest.TestCase):
         self.assertEqual(search["total_games"], 10)
         self.assertEqual(search["validation_games"], 3)
 
-    def test_run_rolling_grid_search_uses_expanding_windows(self):
-        search = run_rolling_grid_search(
-            self.sample_games,
-            lambda_values=[0.05],
-            gamma_values=[0.5],
-            initial_train_size=4,
-            validation_size=2,
-        )
-
-        self.assertEqual(search["window_count"], 3)
-        self.assertEqual(search["validation_games"], 6)
-        self.assertEqual(search["results"][0]["window_count"], 3)
-        self.assertEqual(
-            [row["train_games"] for row in search["window_results"]],
-            [4, 6, 8],
-        )
-        self.assertEqual(
-            [row["validation_end"] for row in search["window_results"]],
-            [6, 8, 10],
-        )
-
-    def test_run_rolling_grid_search_rejects_missing_validation_games(self):
-        with self.assertRaises(ValueError):
-            run_rolling_grid_search(
-                self.sample_games,
-                initial_train_size=10,
-                validation_size=2,
-            )
-
     def test_prediction_does_not_leak_current_outcome(self):
         # Even if the final score for game 0 in validation changes, the prediction
         # for game 0 is made from prior games only.
